@@ -1,6 +1,4 @@
 #pragma once
-#include <_types/_uint16_t.h>
-#include <_types/_uint32_t.h>
 #include <stdlib.h>
 #include "workflow/ProtocolMessage.h"
 
