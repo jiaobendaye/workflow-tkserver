@@ -49,7 +49,7 @@ public:
 	}
 
 protected:
-    TKHeader header;
+	TKHeader header;
 	size_t head_received;
 	char *body;
 	size_t body_received;
@@ -79,14 +79,19 @@ struct TKElem
 	uint16_t length;
 };
 
-#define TKIDHttpMsg 1
-struct TKHttpMsgHeader
+const size_t TKHttpMsgHeaderSize = 20; 
+#define TKIDHttpMsg 0x00001
+
+#define TKHttpMethodPost (1);
+#define TKHttpMethodGet (2);
+
+struct TKHttpMsgHead
 {
 	uint16_t method;
 	uint16_t version;
 	TKElem ret_data;
 	TKElem url;
-	TKElem headers;
+	TKElem header;
 	TKElem body;
 };
 
