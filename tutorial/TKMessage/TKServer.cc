@@ -24,7 +24,7 @@
 #include "workflow/WFTaskFactory.h"
 #include "workflow/WFServer.h"
 #include "workflow/WFFacilities.h"
-#include "message.h"
+#include "TKMessage.h"
 
 using WFTKTask = WFNetworkTask<protocol::TKRequest,
 									 protocol::TKResponse>;

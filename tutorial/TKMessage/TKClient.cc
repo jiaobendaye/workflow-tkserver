@@ -23,10 +23,11 @@
 #include "workflow/Workflow.h"
 #include "workflow/WFTaskFactory.h"
 #include "workflow/WFFacilities.h"
-#include "message.h"
+#include "TKMessage.h"
+#include "TKHttpMsg.h"
 
-using WFTKTask = WFNetworkTask<protocol::TKRequest,
-									 protocol::TKResponse>;
+using WFTKTask = WFNetworkTask<protocol::TKHttpMsg,
+									 protocol::TKHttpMsg>;
 using tutorial_callback_t = std::function<void (WFTKTask *)>;
 
 using namespace protocol;
@@ -39,7 +40,7 @@ public:
 												int retry_max,
 												tutorial_callback_t callback)
 	{
-		using NTF = WFNetworkTaskFactory<TKRequest, TKResponse>;
+		using NTF = WFNetworkTaskFactory<TKHttpMsg, TKHttpMsg>;
 		WFTKTask *task = NTF::create_client_task(TT_TCP, host, port,
 													   retry_max,
 													   std::move(callback));
@@ -51,48 +52,13 @@ public:
 unsigned short port;
 std::string host;
 
-size_t buildTKHttpMsgBody(void **buf, const std::string& ret,
-		const std::string& url, const std::string& header, const std::string& body)
-{
-	size_t payloadLen = ret.size() + url.size() + header.size() + body.size();
-	size_t bufSize = protocol::TKHttpMsgHeaderSize + payloadLen;
-	char * p = (char *)malloc(bufSize);
-	if (p == nullptr)
-	{
-		return -1;
-	}
-	memset(p, 0, bufSize);
-	*buf = p;
-	protocol::TKHttpMsgHead * httpMsgHead = (protocol::TKHttpMsgHead *)p;
-	httpMsgHead->method = TKHttpMethodGet;
-	httpMsgHead->ret_data.offsize = protocol::TKHttpMsgHeaderSize;
-	httpMsgHead->ret_data.length = ret.size();
-	httpMsgHead->url.offsize = httpMsgHead->ret_data.offsize = httpMsgHead->ret_data.length;
-	httpMsgHead->url.length = url.size();
-	httpMsgHead->header.offsize = httpMsgHead->url.offsize = httpMsgHead->url.length;
-	httpMsgHead->header.length = header.size();
-	httpMsgHead->body.offsize = httpMsgHead->header.offsize = httpMsgHead->header.length;
-	httpMsgHead->body.length = body.size();
-	
-	p = (char *)(httpMsgHead+1);
-	memcpy(p, ret.c_str(), ret.size());
-	p += ret.size();
-	memcpy(p, url.c_str(), url.size());
-	p += url.size();
-	memcpy(p, header.c_str(), header.size());
-	p += header.size();
-	memcpy(p, body.c_str(), body.size());
-	p += body.size();
-
-	return bufSize;
-}
 
 
 void callback(WFTKTask* task)
 {		
 	int state = task->get_state();
 	int error = task->get_error();
-	TKResponse *resp = task->get_resp();
+	TKHttpResponse *resp = task->get_resp();
 	char buf[1024];
 	memset(buf, 0, sizeof(buf));
 	void *body;
@@ -111,7 +77,10 @@ void callback(WFTKTask* task)
 
 	resp->get_message_body_nocopy(&body, &body_size);
 	if (body_size != 0)
-		printf("Server Response: %.*s\n", (int)body_size, (char *)body);
+	{
+		// printf("Server Response: %.*s\n", (int)body_size, (char *)body);
+		printf("Server Response: %s\n", resp->get_body_string().c_str());
+	}
 
 	printf("Input next request string (Ctrl-D to exit): ");
 	*buf = '\0';
@@ -120,7 +89,7 @@ void callback(WFTKTask* task)
 	//
 	std::string url = buf;
 	void * msgPtr = nullptr;
-	size_t msgLen = buildTKHttpMsgBody(&msgPtr, "", url, "", "");
+	size_t msgLen = TKHttpMsg::buildTKHttpMsgBody(&msgPtr, "", url, "", "");
 
 	if (body_size > 0 && (msgPtr != nullptr))
 	// if (body_size > 0)

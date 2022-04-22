@@ -4,8 +4,7 @@
 #include <stdint.h>
 #include <arpa/inet.h>
 #include <utility>
-#include "message.h"
-#include "message.h"
+#include "TKMessage.h"
 
 namespace protocol
 {
@@ -73,7 +72,8 @@ int TKMessage::append(const void *buf, size_t size)
 		return 0;
 	}
 
-	printf("recv tkmsg with length: %u body: %s\n",this->header.length, this->body);
+	this->body_received = this->header.length;
+	printf("recv tkmsg with length: %u \n",this->header.length);
 	return 1;
 }
 

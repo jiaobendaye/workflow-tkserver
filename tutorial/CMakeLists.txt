@@ -102,12 +102,12 @@ set_target_properties(client PROPERTIES
 	RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/${DIR10})
 
 set(DIRTK TKMessage)
-add_executable(tkserver ${DIRTK}/server.cc ${DIRTK}/message.cc)
-add_executable(tkclient ${DIRTK}/client.cc ${DIRTK}/message.cc)
-target_link_libraries(tkserver ${WORKFLOW_LIB})
-target_link_libraries(tkclient ${WORKFLOW_LIB})
+add_executable(TKServer ${DIRTK}/TKServer.cc ${DIRTK}/TKMessage.cc ${DIRTK}/TKHttpMsg.cc)
+add_executable(TKClient ${DIRTK}/TKClient.cc ${DIRTK}/TKMessage.cc ${DIRTK}/TKHttpMsg.cc)
+target_link_libraries(TKServer ${WORKFLOW_LIB})
+target_link_libraries(TKClient ${WORKFLOW_LIB})
 
-set_target_properties(tkserver PROPERTIES
+set_target_properties(TKServer PROPERTIES
 	RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/${DIRTK})
-set_target_properties(tkclient PROPERTIES
+set_target_properties(TKClient PROPERTIES
 	RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/${DIRTK})
