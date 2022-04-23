@@ -18,7 +18,7 @@ int TKMessage::encode(struct iovec vectors[], int max/*max==8192*/)
 	vectors[0].iov_len = TKHEADERSIZE;
 	vectors[1].iov_base = this->body;
 	vectors[1].iov_len = this->header.length;
-	printf("send tkmsg with length: %u body: %s\n", this->header.length, this->body);
+	printf("send tkmsg with length: %u \n", this->header.length);
 
 	return 2;	/* return the number of vectors used, no more then max. */
 }

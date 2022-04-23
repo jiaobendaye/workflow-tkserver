@@ -25,6 +25,7 @@
 #include "workflow/WFServer.h"
 #include "workflow/WFFacilities.h"
 #include "TKMessage.h"
+#include "TKHttpMsg.h"
 
 using WFTKTask = WFNetworkTask<protocol::TKRequest,
 									 protocol::TKResponse>;
@@ -42,9 +43,20 @@ void process(WFTKTask *task)
 	size_t i;
 
 	req->get_message_body_nocopy(&body, &size);
+	//需要根据TKID来转一下
+	switch (req->get_header_type()) {
+	case TKID_HTTP_MSG :
+	{
+			printf("Server recv req, httpMsg: %s\n", TKHttpMsg::to_str((TKHttpResponse*)req).c_str());
+		break;
+	}
+	default:
+			printf("Server recv req, tkMsg: %.*s\n", (int)size, (char *)body);
+		break;
+	}
 	for (i = 0; i < size; i++)
 		((char *)body)[i] = toupper(((char *)body)[i]);
-
+	resp->set_header_type(req->get_header_type());
 	resp->set_message_body(body, size);
 }
 

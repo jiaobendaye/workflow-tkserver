@@ -4,26 +4,34 @@
 #include <cstring>
 namespace protocol {
 
-std::string TKHttpMsg::get_body_string() const 
+std::string TKHttpMsg::to_str(TKHttpMsg* pMsg) 
 {
-  if (body_received < TKHttpMsgHeaderSize )
+  if (pMsg->body_received < TKHttpMsgHeaderSize )
   {
     return "bad tkhttpmsg";
   }
   std::stringstream ss;
-  TKHttpMsgHead * p = (TKHttpMsgHead *)body;
-  ss << "id: " << TKID_HTTP_MSG;
+  TKHttpMsgHead * p = (TKHttpMsgHead *)pMsg->body;
+  ss << "id: " << pMsg->get_header_type();
   ss << " | method: " << p->method;
   ss << " | version: " << p->version;
+	std::string ret(((char*)p)+p->ret_data.offsize, p->ret_data.length);
+	ss << " | ret_data: " << ret;
+	std::string url(((char*)p)+p->url.offsize, p->url.length);
+	ss << " | url: " << url;
+	std::string header(((char*)p)+p->header.offsize, p->header.length);
+	ss << " | header: " << header;
+	std::string body(((char*)p)+p->body.offsize, p->body.length);
+	ss << " | body: " << body;
 
   return ss.str();
 }
 
-size_t  TKHttpMsg::buildTKHttpMsgBody(void **buf, const std::string& ret,
+size_t  TKHttpMsg::build_tkhttpmsg_body(void **buf, const std::string& ret,
 		const std::string& url, const std::string& header, const std::string& body)
 {
 	size_t payloadLen = ret.size() + url.size() + header.size() + body.size();
-	size_t bufSize = protocol::TKHttpMsgHeaderSize + payloadLen;
+	size_t bufSize = TKHttpMsgHeaderSize + payloadLen;
 	char * p = (char *)malloc(bufSize);
 	if (p == nullptr)
 	{
@@ -33,13 +41,16 @@ size_t  TKHttpMsg::buildTKHttpMsgBody(void **buf, const std::string& ret,
 	*buf = p;
 	protocol::TKHttpMsgHead * httpMsgHead = (protocol::TKHttpMsgHead *)p;
 	httpMsgHead->method = TK_HTTP_METHOD_GET;
-	httpMsgHead->ret_data.offsize = protocol::TKHttpMsgHeaderSize;
+	httpMsgHead->ret_data.offsize = TKHttpMsgHeaderSize;
 	httpMsgHead->ret_data.length = ret.size();
-	httpMsgHead->url.offsize = httpMsgHead->ret_data.offsize = httpMsgHead->ret_data.length;
+
+	httpMsgHead->url.offsize = httpMsgHead->ret_data.offsize + httpMsgHead->ret_data.length;
 	httpMsgHead->url.length = url.size();
-	httpMsgHead->header.offsize = httpMsgHead->url.offsize = httpMsgHead->url.length;
+
+	httpMsgHead->header.offsize = httpMsgHead->url.offsize + httpMsgHead->url.length;
 	httpMsgHead->header.length = header.size();
-	httpMsgHead->body.offsize = httpMsgHead->header.offsize = httpMsgHead->header.length;
+
+	httpMsgHead->body.offsize = httpMsgHead->header.offsize + httpMsgHead->header.length;
 	httpMsgHead->body.length = body.size();
 	
 	p = (char *)(httpMsgHead+1);

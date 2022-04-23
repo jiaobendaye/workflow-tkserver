@@ -4,7 +4,7 @@
 namespace protocol {
 
 const size_t TKHttpMsgHeaderSize = 20; 
-#define TKID_HTTP_MSG 0x00001
+#define TKID_HTTP_MSG (0x00001)
 
 #define TK_HTTP_METHOD_POST (1);
 #define TK_HTTP_METHOD_GET (2);
@@ -22,10 +22,10 @@ struct TKHttpMsgHead
 class TKHttpMsg :public TKMessage 
 {
 	public:
-	virtual std::string get_body_string() const override;
+	static std::string to_str(TKHttpMsg* pMsg);
 
   public:
-  static size_t buildTKHttpMsgBody(void **buf, const std::string& ret,
+  static size_t build_tkhttpmsg_body(void **buf, const std::string& ret,
 		const std::string& url, const std::string& header, const std::string& body);
 };
 

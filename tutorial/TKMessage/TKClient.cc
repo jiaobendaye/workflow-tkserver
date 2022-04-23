@@ -26,8 +26,8 @@
 #include "TKMessage.h"
 #include "TKHttpMsg.h"
 
-using WFTKTask = WFNetworkTask<protocol::TKHttpMsg,
-									 protocol::TKHttpMsg>;
+using WFTKTask = WFNetworkTask<protocol::TKRequest,
+									 protocol::TKResponse>;
 using tutorial_callback_t = std::function<void (WFTKTask *)>;
 
 using namespace protocol;
@@ -40,7 +40,7 @@ public:
 												int retry_max,
 												tutorial_callback_t callback)
 	{
-		using NTF = WFNetworkTaskFactory<TKHttpMsg, TKHttpMsg>;
+		using NTF = WFNetworkTaskFactory<TKRequest, TKResponse>;
 		WFTKTask *task = NTF::create_client_task(TT_TCP, host, port,
 													   retry_max,
 													   std::move(callback));
@@ -58,7 +58,7 @@ void callback(WFTKTask* task)
 {		
 	int state = task->get_state();
 	int error = task->get_error();
-	TKHttpResponse *resp = task->get_resp();
+	TKResponse *resp = task->get_resp();
 	char buf[1024];
 	memset(buf, 0, sizeof(buf));
 	void *body;
@@ -76,10 +76,16 @@ void callback(WFTKTask* task)
 	}
 
 	resp->get_message_body_nocopy(&body, &body_size);
-	if (body_size != 0)
+	//需要根据TKID来转一下
+	switch (resp->get_header_type()) {
+	case TKID_HTTP_MSG :
 	{
-		// printf("Server Response: %.*s\n", (int)body_size, (char *)body);
-		printf("Server Response: %s\n", resp->get_body_string().c_str());
+			printf("Server Response httpMsg: %s\n", TKHttpMsg::to_str((TKHttpResponse*)resp).c_str());
+		break;
+	}
+	default:
+			printf("Server Response tkMsg: %.*s\n", (int)body_size, (char *)body);
+		break;
 	}
 
 	printf("Input next request string (Ctrl-D to exit): ");
@@ -88,16 +94,16 @@ void callback(WFTKTask* task)
 	body_size = strlen(buf);
 	//
 	std::string url = buf;
-	void * msgPtr = nullptr;
-	size_t msgLen = TKHttpMsg::buildTKHttpMsgBody(&msgPtr, "", url, "", "");
+	void * msg_ptr = nullptr;
+	size_t msg_len = TKHttpMsg::build_tkhttpmsg_body(&msg_ptr, "", url, "", "");
 
-	if (body_size > 0 && (msgPtr != nullptr))
-	// if (body_size > 0)
+	if (body_size > 0 && (msg_ptr != nullptr))
 	{
 		WFTKTask *next;
 		next = MyFactory::create_tk_task(host, port, 0, callback);
 		// next->get_req()->set_message_body(buf, body_size);
-		next->get_req()->set_message_body(msgPtr, msgLen);
+		next->get_req()->set_header_type(TKID_HTTP_MSG);
+		next->get_req()->set_message_body(msg_ptr, msg_len);
 		next->get_resp()->set_size_limit(4 * 1024);
 		**task << next; /* equal to: series_of(task)->push_back(next) */
 	}

@@ -49,7 +49,6 @@ public:
 		*size = this->header.length;
 	}
 
-	virtual std::string get_body_string() const {return "";}
 
 protected:
 	TKHeader header;
