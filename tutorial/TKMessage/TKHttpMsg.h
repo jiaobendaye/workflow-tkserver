@@ -1,5 +1,6 @@
 #pragma once
 #include "TKMessage.h"
+#include <string>
 
 namespace protocol {
 
@@ -22,7 +23,9 @@ struct TKHttpMsgHead
 class TKHttpMsg :public TKMessage 
 {
 	public:
-	static std::string to_str(TKHttpMsg* pMsg);
+	static std::string to_str(const TKHttpMsg* pMsg);
+	static bool unpack(const TKHttpMsg* pMsg, std::string& ret,
+		std::string& url, std::string& header, std::string& body);
 
   public:
   static size_t build_tkhttpmsg_body(void **buf, const std::string& ret,

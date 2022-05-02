@@ -40,6 +40,7 @@ public:
 	uint32_t get_header_param() const {return this->header.param;}
 	uint16_t get_header_origin() const {return this->header.origin;}
 	uint16_t get_header_reserve() const {return this->header.reserve;}
+	size_t   get_header_length() const {return this->header.length;}
 
 	int set_message_body(const void *body, size_t size);
 

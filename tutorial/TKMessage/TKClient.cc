@@ -73,6 +73,10 @@ void callback(WFTKTask* task)
 		else
 			fprintf(stderr, "other error.\n");
 		return;
+	} else if (task->get_task_seq() == 0)
+	{
+		WFConnection *conn = task->get_connection();
+		conn->set_context(NULL, [](void *context){ printf("Connection closed\n"); });
 	}
 
 	resp->get_message_body_nocopy(&body, &body_size);

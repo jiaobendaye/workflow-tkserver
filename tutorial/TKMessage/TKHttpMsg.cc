@@ -4,14 +4,22 @@
 #include <cstring>
 namespace protocol {
 
-std::string TKHttpMsg::to_str(TKHttpMsg* pMsg) 
+std::string TKHttpMsg::to_str(const TKHttpMsg* pMsg) 
 {
   if (pMsg->body_received < TKHttpMsgHeaderSize )
   {
     return "bad tkhttpmsg";
   }
-  std::stringstream ss;
   TKHttpMsgHead * p = (TKHttpMsgHead *)pMsg->body;
+	if ((p->ret_data.offsize + p->ret_data.length) > pMsg->get_header_length()
+		||(p->url.offsize + p->url.length) > pMsg->get_header_length()
+		||(p->header.offsize + p->header.length) > pMsg->get_header_length()
+		||(p->body.offsize + p->body.length) > pMsg->get_header_length())
+	{
+    return "bad tkhttpmsg";
+	}
+
+  std::stringstream ss;
   ss << "id: " << pMsg->get_header_type();
   ss << " | method: " << p->method;
   ss << " | version: " << p->version;
@@ -25,6 +33,28 @@ std::string TKHttpMsg::to_str(TKHttpMsg* pMsg)
 	ss << " | body: " << body;
 
   return ss.str();
+}
+
+bool TKHttpMsg::unpack(const TKHttpMsg* pMsg, std::string& ret, std::string& url, std::string& header, std::string& body)
+{
+  if (pMsg->body_received < TKHttpMsgHeaderSize )
+  {
+    return false;
+  }
+
+  TKHttpMsgHead * p = (TKHttpMsgHead *)pMsg->body;
+	if ((p->ret_data.offsize + p->ret_data.length) > pMsg->get_header_length()
+		||(p->url.offsize + p->url.length) > pMsg->get_header_length()
+		||(p->header.offsize + p->header.length) > pMsg->get_header_length()
+		||(p->body.offsize + p->body.length) > pMsg->get_header_length())
+	{
+    return false;
+	}
+	ret.assign(((char*)p)+p->ret_data.offsize, p->ret_data.length);
+	url.assign(((char*)p)+p->url.offsize, p->url.length);
+	header.assign(((char*)p)+p->header.offsize, p->header.length);
+	body.assign(((char*)p)+p->body.offsize, p->body.length);
+	return true;
 }
 
 size_t  TKHttpMsg::build_tkhttpmsg_body(void **buf, const std::string& ret,
