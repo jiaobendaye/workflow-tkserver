@@ -18,6 +18,7 @@
 
 #include <cstring>
 #include <netinet/in.h>
+#include <sstream>
 #include <stdlib.h>
 #include <stdio.h>
 #include <ctype.h>
@@ -28,10 +29,13 @@
 #include "workflow/WFTaskFactory.h"
 #include "workflow/WFServer.h"
 #include "workflow/WFFacilities.h"
+#include "workflow/HttpMessage.h"
+#include "workflow/HttpUtil.h"
 #include "TKMessage.h"
 #include "TKHttpMsg.h"
 #include "workflow/mysql_types.h"
 #include <atomic>
+#include <string>
 #include <sys/socket.h>
 
 using namespace protocol;
@@ -61,7 +65,7 @@ void reply_callback(WFTKTask* proxy_task)
 	size_t size = proxy_resp->get_header_length();
 
 	if (proxy_task->get_state() == WFT_STATE_SUCCESS)
-		fprintf(stderr, "%s: Success. BodyLength: %zu\n", context->url.c_str(), size);
+		fprintf(stderr, "%s: Reply success. BodyLength: %zu\n", context->url.c_str(), size);
 	else /* WFT_STATE_SYS_ERROR*/
 		fprintf(stderr, "%s: Reply failed: %s, BodyLength: %zu\n",
 				context->url.c_str(), strerror(proxy_task->get_error()), size);
@@ -79,19 +83,26 @@ void http_callback(WFHttpTask *task)
 	auto *proxy_resp = context->proxy_task->get_resp();
 
 	std::string header;
-	std::string body;
+	std::string str_body;
 	if (state == WFT_STATE_SUCCESS)
 	{
 		const void *body;
 		size_t len;
 
-		/* set a callback for getting reply status. */
-		context->proxy_task->set_callback(reply_callback);
+		std::stringstream ss;
+		/* get response header. */
+		protocol::HttpHeaderCursor resp_cursor(resp);
+		std::string name;
+		std::string value;
+		while (resp_cursor.next(name, value))
+			ss << name << ": " << value << "\r\n";
+		header = ss.str();
+		ss.str("");
 
-		/* Copy the remote webserver's response, to proxy response. */
+		/* get response body. */
 		resp->get_parsed_body(&body, &len);
 		resp->append_output_body_nocopy(body, len);
-		//TODO
+		str_body.assign((char*)body, len);
 	}
 	else
 	{
@@ -110,12 +121,12 @@ void http_callback(WFHttpTask *task)
 				context->url.c_str(), state, error, err_string);
 
 		/* As a tutorial, make it simple. And ignore reply status. */
-		body = err_string;
+		str_body = err_string;
 	}
 
 	proxy_resp->set_header_type(context->proxy_task->get_req()->get_header_type());
 	void * msg_ptr = nullptr;
-	size_t msg_len = TKHttpMsg::build_tkhttpmsg_body(&msg_ptr, context->ret_data, context->url, header, body);
+	size_t msg_len = TKHttpMsg::build_tkhttpmsg_body(&msg_ptr, context->ret_data, context->url, header, str_body);
 	if (msg_ptr != nullptr)
 		proxy_resp->set_message_body(msg_ptr, msg_len);
 }
@@ -132,7 +143,6 @@ void process(WFTKTask *task)
 		// if (res != 0) {
 		// 	fprintf(stderr, "parse addr failed errno: %d, %s,\n",errno, std::strerror(errno));
 		// }
-		return;
 	}
 
 	TKRequest *req = task->get_req();
@@ -176,6 +186,7 @@ void process(WFTKTask *task)
 
 		ctx->url = std::move(url);
 		ctx->ret_data = std::move(ret_data);
+		ctx->proxy_task = task;
 		series_of(task)->set_context(ctx);
 		series_of(task)->set_callback([](const SeriesWork *series) {
 			delete (series_context *)series->get_context();
@@ -184,7 +195,7 @@ void process(WFTKTask *task)
 		reqing++;
 		**task << http_task;
 	} else {
-		printf("reqing is %u, drop the msg\n", reqing.load());
+		printf("reqing is %u, close the connection\n", reqing.load());
 		task->noreply();
 	}
 }
