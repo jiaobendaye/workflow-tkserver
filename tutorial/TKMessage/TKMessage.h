@@ -1,4 +1,5 @@
 #pragma once
+#include <cstddef>
 #include <cstring>
 #include <stdlib.h>
 #include <string>
@@ -44,6 +45,7 @@ public:
 	size_t   get_header_length() const {return this->header.length;}
 
 	int set_message_body(const void *body, size_t size);
+	int set_message_body_nocopy(const void *body, size_t size);
 
 	void get_message_body_nocopy(void **body, size_t *size)
 	{
@@ -51,6 +53,8 @@ public:
 		*size = this->header.length;
 	}
 
+public:
+	static std::string Dump_header(TKMessage& msg);
 
 protected:
 	TKHeader header;
@@ -72,7 +76,8 @@ public:
 
 	virtual ~TKMessage()
 	{
-		if (this->body) free(this->body);
+		free(this->body);
+		this->body = nullptr;
 	}
 };
 

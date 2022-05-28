@@ -127,7 +127,9 @@ void http_callback(WFHttpTask *task)
 	void * msg_ptr = nullptr;
 	size_t msg_len = TKHttpMsg::build_tkhttpmsg_body(&msg_ptr, context->ret_data, context->url, header, str_body);
 	if (msg_ptr != nullptr)
-		proxy_resp->set_message_body(msg_ptr, msg_len);
+	{
+		proxy_resp->set_message_body_nocopy(msg_ptr, msg_len);
+	}
 }
 
 void process(WFTKTask *task)
@@ -157,7 +159,7 @@ void process(WFTKTask *task)
 		break;
 	}
 	default:
-		printf("Server recv req, tkMsg: %.*s\n", (int)size, (char *)body);
+		printf("Server recv req, tkMsg. header: %s, body:%.*s\n", TKMessage::Dump_header(*req).c_str(), (int)size, (char *)body);
 		// task->noreply();
 		return;
 	}

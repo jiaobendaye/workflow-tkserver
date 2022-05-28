@@ -107,7 +107,7 @@ void callback(WFTKTask* task)
 		next = MyFactory::create_tk_task(host, port, 0, callback);
 		// next->get_req()->set_message_body(buf, body_size);
 		next->get_req()->set_header_type(TKID_HTTP_MSG);
-		next->get_req()->set_message_body(msg_ptr, msg_len);
+		next->get_req()->set_message_body_nocopy(msg_ptr, msg_len);
 		next->get_resp()->set_size_limit(4 * 1024);
 		**task << next; /* equal to: series_of(task)->push_back(next) */
 	}

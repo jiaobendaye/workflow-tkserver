@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <sstream>
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
@@ -16,11 +17,14 @@ int TKMessage::encode(struct iovec vectors[], int max/*max==8192*/)
     //TODO bigendian process
 	vectors[0].iov_base = &this->header;
 	vectors[0].iov_len = TKHEADERSIZE;
-	vectors[1].iov_base = this->body;
-	vectors[1].iov_len = this->header.length;
 	printf("send tkmsg with length: %u \n", this->header.length);
-
-	return 2;	/* return the number of vectors used, no more then max. */
+	if (this->header.length)
+	{
+		vectors[1].iov_base = this->body;
+		vectors[1].iov_len = this->header.length;
+		return 2;
+	}
+	return 1;	/* return the number of vectors used, no more then max. */
 }
 
 int TKMessage::append(const void *buf, size_t size)
@@ -81,16 +85,27 @@ int TKMessage::append(const void *buf, size_t size)
 	return 1;
 }
 
+
+int TKMessage::set_message_body_nocopy(const void *body, size_t size)
+{
+	free(this->body);
+	this->body = (char*)body;
+    this->header.length = size;
+
+	this->head_received = TKHEADERSIZE;
+	this->body_received = size;
+	return 0;
+}
+
 int TKMessage::set_message_body(const void *body, size_t size)
 {
 	void *p = malloc(size);
-
 	if (!p)
 		return -1;
 
 	memcpy(p, body, size);
 	free(this->body);
-	this->body = (char *)p;
+	this->body = (char*)p;
     this->header.length = size;
 
 	this->head_received = TKHEADERSIZE;
@@ -103,6 +118,7 @@ TKMessage::TKMessage(TKMessage&& msg) :
 {
     memcpy(&this->header, &msg.header, TKHEADERSIZE);
 	this->head_received = msg.head_received;
+	free(this->body);
 	this->body = msg.body;
 	this->body_received = msg.body_received;
 
@@ -118,6 +134,7 @@ TKMessage& TKMessage::operator = (TKMessage&& msg)
 
 		memcpy(&this->header, &msg.header, TKHEADERSIZE);
 		this->head_received = msg.head_received;
+		free(this->body);
 		this->body = msg.body;
 		this->body_received = msg.body_received;
 
@@ -127,4 +144,19 @@ TKMessage& TKMessage::operator = (TKMessage&& msg)
 
 	return *this;
 }
+
+std::string  TKMessage::Dump_header(TKMessage& msg)
+{
+	std::stringstream ss;
+	ss << "magic:" << msg.header.magic ;
+	ss << " serial:" << msg.header.serial;
+	ss << " origin:" << msg.header.origin;
+	ss << " reserve:" << msg.header.reserve;
+	ss << " type:" << msg.header.type;
+	ss << " param:" << msg.header.param;
+	ss << " length:" << msg.header.length;
+
+	return ss.str();
+}
+
 }
