@@ -1,4 +1,5 @@
 #pragma once
+#include <cstring>
 #include <stdlib.h>
 #include <string>
 #include "workflow/ProtocolMessage.h"
@@ -60,8 +61,10 @@ protected:
 public:
 	TKMessage()
 	{
+		memset(&this->header, 0, sizeof(TKHeader));
 		this->head_received = 0;
-		this->body = NULL;
+		this->body_received = 0;
+		this->body = nullptr;
 	}
 
 	TKMessage(TKMessage&& msg);
@@ -69,7 +72,7 @@ public:
 
 	virtual ~TKMessage()
 	{
-		free(this->body);
+		if (this->body) free(this->body);
 	}
 };
 

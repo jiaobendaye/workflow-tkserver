@@ -33,7 +33,6 @@
 #include "workflow/HttpUtil.h"
 #include "TKMessage.h"
 #include "TKHttpMsg.h"
-#include "workflow/mysql_types.h"
 #include <atomic>
 #include <string>
 #include <sys/socket.h>

@@ -44,15 +44,17 @@ int TKMessage::append(const void *buf, size_t size)
 		buf = (const char *)buf + head_left;
 
         //TODO bigendian process
-		if (this->header.length > this->size_limit)
+		if (this->header.length > 0)
 		{
-			errno = EMSGSIZE;
-			return -1;
+			if (this->header.length > this->size_limit)
+			{
+				errno = EMSGSIZE;
+				return -1;
+			}
+			this->body = (char *)malloc(this->header.length);
+			if (!this->body)
+				return -1;
 		}
-
-		this->body = (char *)malloc(this->header.length);
-		if (!this->body)
-			return -1;
 
 		this->body_received = 0;
 	}
@@ -65,14 +67,16 @@ int TKMessage::append(const void *buf, size_t size)
 		return -1;
 	}
 
-	memcpy(this->body, buf, size);
-	if (size < body_left)
+	memcpy(this->body+this->body_received, buf, size);
+	this->body_received += size;
+	body_left-=size;
+	if (body_left)
 	{
 		printf("tkmsg recving..., bodyleft: %lu", body_left);
 		return 0;
 	}
 
-	this->body_received = this->header.length;
+	// this->body_received = this->header.length;
 	printf("recv tkmsg with length: %u \n",this->header.length);
 	return 1;
 }
