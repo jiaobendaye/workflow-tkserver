@@ -66,8 +66,6 @@ struct __poller_node
 struct __poller
 {
 	size_t max_open_files;
-	poller_message_t *(*create_message)(void *);
-	int (*partial_written)(size_t, void *);
 	void (*cb)(struct poller_result *, void *);
 	void *ctx;
 
@@ -348,7 +346,7 @@ static int __poller_append_message(const void *buf, size_t *n,
 		if (!res)
 			return -1;
 
-		msg = poller->create_message(node->data.context);
+		msg = node->data.create_message(node->data.context);
 		if (!msg)
 		{
 			free(res);
@@ -549,7 +547,7 @@ static void __poller_handle_write(struct __poller_node *node,
 		if (count == 0)
 			return;
 
-		if (poller->partial_written(count, node->data.context) >= 0)
+		if (node->data.partial_written(count, node->data.context) >= 0)
 			return;
 	}
 
@@ -575,29 +573,31 @@ static void __poller_handle_listen(struct __poller_node *node,
 {
 	struct __poller_node *res = node->res;
 	struct sockaddr_storage ss;
-	socklen_t len;
+	struct sockaddr *addr = (struct sockaddr *)&ss;
+	socklen_t addrlen;
+	void *result;
 	int sockfd;
-	void *p;
 
 	while (1)
 	{
-		len = sizeof (struct sockaddr_storage);
-		sockfd = accept(node->data.fd, (struct sockaddr *)&ss, &len);
+		addrlen = sizeof (struct sockaddr_storage);
+		sockfd = accept(node->data.fd, addr, &addrlen);
 		if (sockfd < 0)
 		{
-			if (errno == EAGAIN)
+			if (errno == EAGAIN || errno == EMFILE || errno == ENFILE)
 				return;
+			else if (errno == ECONNABORTED)
+				continue;
 			else
 				break;
 		}
 
-		p = node->data.accept((const struct sockaddr *)&ss, len,
-							  sockfd, node->data.context);
-		if (!p)
+		result = node->data.accept(addr, addrlen, sockfd, node->data.context);
+		if (!result)
 			break;
 
 		res->data = node->data;
-		res->data.result = p;
+		res->data.result = result;
 		res->error = 0;
 		res->state = PR_ST_SUCCESS;
 		poller->cb((struct poller_result *)res, poller->ctx);
@@ -733,17 +733,17 @@ static void __poller_handle_event(struct __poller_node *node,
 	struct __poller_node *res = node->res;
 	unsigned long long cnt = 0;
 	unsigned long long value;
-	ssize_t ret;
-	void *p;
+	void *result;
+	ssize_t n;
 
 	while (1)
 	{
-		ret = read(node->data.fd, &value, sizeof (unsigned long long));
-		if (ret == sizeof (unsigned long long))
+		n = read(node->data.fd, &value, sizeof (unsigned long long));
+		if (n == sizeof (unsigned long long))
 			cnt += value;
 		else
 		{
-			if (ret >= 0)
+			if (n >= 0)
 				errno = EINVAL;
 			break;
 		}
@@ -757,12 +757,12 @@ static void __poller_handle_event(struct __poller_node *node,
 				return;
 
 			cnt--;
-			p = node->data.event(node->data.context);
-			if (!p)
+			result = node->data.event(node->data.context);
+			if (!result)
 				break;
 
 			res->data = node->data;
-			res->data.result = p;
+			res->data.result = result;
 			res->error = 0;
 			res->state = PR_ST_SUCCESS;
 			poller->cb((struct poller_result *)res, poller->ctx);
@@ -790,20 +790,20 @@ static void __poller_handle_notify(struct __poller_node *node,
 								   poller_t *poller)
 {
 	struct __poller_node *res = node->res;
-	ssize_t ret;
-	void *p;
+	void *result;
+	ssize_t n;
 
 	while (1)
 	{
-		ret = read(node->data.fd, &p, sizeof (void *));
-		if (ret == sizeof (void *))
+		n = read(node->data.fd, &result, sizeof (void *));
+		if (n == sizeof (void *))
 		{
-			p = node->data.notify(p, node->data.context);
-			if (!p)
+			result = node->data.notify(result, node->data.context);
+			if (!result)
 				break;
 
 			res->data = node->data;
-			res->data.result = p;
+			res->data.result = result;
 			res->error = 0;
 			res->state = PR_ST_SUCCESS;
 			poller->cb((struct poller_result *)res, poller->ctx);
@@ -813,11 +813,11 @@ static void __poller_handle_notify(struct __poller_node *node,
 			if (!res)
 				break;
 		}
-		else if (ret < 0 && errno == EAGAIN)
+		else if (n < 0 && errno == EAGAIN)
 			return;
 		else
 		{
-			if (ret > 0)
+			if (n > 0)
 				errno = EINVAL;
 			break;
 		}
@@ -826,7 +826,7 @@ static void __poller_handle_notify(struct __poller_node *node,
 	if (__poller_remove_node(node, poller))
 		return;
 
-	if (ret == 0)
+	if (n == 0)
 	{
 		node->error = 0;
 		node->state = PR_ST_FINISHED;
@@ -837,6 +837,55 @@ static void __poller_handle_notify(struct __poller_node *node,
 		node->state = PR_ST_ERROR;
 	}
 
+	free(node->res);
+	poller->cb((struct poller_result *)node, poller->ctx);
+}
+
+static void __poller_handle_recvfrom(struct __poller_node *node,
+									 poller_t *poller)
+{
+	struct __poller_node *res = node->res;
+	struct sockaddr_storage ss;
+	struct sockaddr *addr = (struct sockaddr *)&ss;
+	socklen_t addrlen;
+	void *result;
+	ssize_t n;
+
+	while (1)
+	{
+		addrlen = sizeof (struct sockaddr_storage);
+		n = recvfrom(node->data.fd, poller->buf, POLLER_BUFSIZE, 0,
+					 addr, &addrlen);
+		if (n < 0)
+		{
+			if (errno == EAGAIN)
+				return;
+			else
+				break;
+		}
+
+		result = node->data.recvfrom(addr, addrlen, poller->buf, n,
+									 node->data.context);
+		if (!result)
+			break;
+
+		res->data = node->data;
+		res->data.result = result;
+		res->error = 0;
+		res->state = PR_ST_SUCCESS;
+		poller->cb((struct poller_result *)res, poller->ctx);
+
+		res = (struct __poller_node *)malloc(sizeof (struct __poller_node));
+		node->res = res;
+		if (!res)
+			break;
+	}
+
+	if (__poller_remove_node(node, poller))
+		return;
+
+	node->error = errno;
+	node->state = PR_ST_ERROR;
 	free(node->res);
 	poller->cb((struct poller_result *)node, poller->ctx);
 }
@@ -1006,6 +1055,9 @@ static void *__poller_thread_routine(void *arg)
 				case PD_OP_NOTIFY:
 					__poller_handle_notify(node, poller);
 					break;
+				case PD_OP_RECVFROM:
+					__poller_handle_recvfrom(node, poller);
+					break;
 				}
 			}
 			else if (node == (struct __poller_node *)1)
@@ -1087,8 +1139,6 @@ poller_t *__poller_create(void **nodes_buf, const struct poller_params *params)
 			{
 				poller->nodes = (struct __poller_node **)nodes_buf;
 				poller->max_open_files = params->max_open_files;
-				poller->create_message = params->create_message;
-				poller->partial_written = params->partial_written;
 				poller->cb = params->callback;
 				poller->ctx = params->context;
 
@@ -1222,7 +1272,7 @@ static int __poller_data_get_event(int *event, const struct poller_data *data)
 		*event = EPOLLOUT | EPOLLET;
 		return 0;
 	case PD_OP_LISTEN:
-		*event = EPOLLIN | EPOLLET;
+		*event = EPOLLIN;
 		return 1;
 	case PD_OP_CONNECT:
 		*event = EPOLLOUT | EPOLLET;
@@ -1240,6 +1290,9 @@ static int __poller_data_get_event(int *event, const struct poller_data *data)
 		*event = EPOLLIN | EPOLLET;
 		return 1;
 	case PD_OP_NOTIFY:
+		*event = EPOLLIN | EPOLLET;
+		return 1;
+	case PD_OP_RECVFROM:
 		*event = EPOLLIN | EPOLLET;
 		return 1;
 	default:

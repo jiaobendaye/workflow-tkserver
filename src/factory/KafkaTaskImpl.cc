@@ -30,9 +30,23 @@ using namespace protocol;
 #define KAFKA_KEEPALIVE_DEFAULT	(60 * 1000)
 #define KAFKA_ROUNDTRIP_TIMEOUT (5 * 1000)
 
+static KafkaCgroup __create_cgroup(const KafkaCgroup *c)
+{
+	KafkaCgroup g;
+	const char *member_id = c->get_member_id();
+
+	if (member_id)
+		g.set_member_id(member_id);
+
+	g.set_group(c->get_group());
+
+	return g;
+}
+
 /**********Client**********/
 
-class __ComplexKafkaTask : public WFComplexClientTask<KafkaRequest, KafkaResponse, std::function<void (__WFKafkaTask *)>>
+class __ComplexKafkaTask : public WFComplexClientTask<KafkaRequest, KafkaResponse,
+													  struct __ComplexKafkaTaskCtx>
 {
 public:
 	__ComplexKafkaTask(int retry_max, __kafka_callback_t&& callback) :
@@ -40,6 +54,7 @@ public:
 	{
 		is_user_request_ = true;
 		is_redirect_ = false;
+		ctx_.kafka_error = 0;
 	}
 
 protected:
@@ -99,6 +114,7 @@ private:
 		}
 	};
 
+	virtual int keep_alive_timeout();
 	virtual int first_timeout();
 	bool has_next();
 	bool check_redirect();
@@ -183,6 +199,7 @@ CommMessageOut *__ComplexKafkaTask::message_out()
 				req->set_api_type(Kafka_SaslHandshake);
 			else
 				req->set_api_type(Kafka_SaslAuthenticate);
+			req->set_correlation_id(1);
 			is_user_request_ = false;
 			return req;
 		}
@@ -235,7 +252,7 @@ CommMessageOut *__ComplexKafkaTask::message_out()
 				}
 				else
 				{
-					toppar->set_offset(toppar->get_high_watermark() - 1);
+					toppar->set_offset(toppar->get_high_watermark());
 				}
 				continue;
 			}
@@ -256,11 +273,13 @@ CommMessageOut *__ComplexKafkaTask::message_out()
 			new_req->set_toppar_list(toppar_list);
 			new_req->set_config(*req->get_config());
 			new_req->set_api_type(Kafka_ListOffsets);
+			new_req->set_correlation_id(seqid);
 			is_user_request_ = false;
 			return new_req;
 		}
 	}
 
+	this->get_req()->set_correlation_id(seqid);
 	return this->WFComplexClientTask::message_out();
 }
 
@@ -268,10 +287,23 @@ CommMessageIn *__ComplexKafkaTask::message_in()
 {
 	KafkaRequest *req = static_cast<KafkaRequest *>(this->get_message_out());
 	KafkaResponse *resp = this->get_resp();
+	KafkaCgroup *cgroup;
 
 	resp->set_api_type(req->get_api_type());
 	resp->set_api_version(req->get_api_version());
 	resp->duplicate(*req);
+
+	switch (req->get_api_type())
+	{
+	case Kafka_FindCoordinator:
+	case Kafka_Heartbeat:
+		cgroup = req->get_cgroup();
+		if (cgroup->get_group())
+			resp->set_cgroup(__create_cgroup(cgroup));
+		break;
+	default:
+		break;
+	}
 
 	return this->WFComplexClientTask::message_in();
 }
@@ -337,6 +369,14 @@ bool __ComplexKafkaTask::init_success()
 	this->WFComplexClientTask::set_transport_type(type);
 
 	return true;
+}
+
+int __ComplexKafkaTask::keep_alive_timeout()
+{
+	if (this->get_resp()->get_broker()->get_error())
+		return 0;
+
+	return this->WFComplexClientTask::keep_alive_timeout();
 }
 
 int __ComplexKafkaTask::first_timeout()
@@ -412,14 +452,17 @@ bool __ComplexKafkaTask::check_redirect()
 
 bool __ComplexKafkaTask::process_find_coordinator()
 {
-	if (this->get_resp()->get_cgroup()->get_error())
+	KafkaCgroup *cgroup = this->get_resp()->get_cgroup();
+	ctx_.kafka_error = cgroup->get_error();
+	if (ctx_.kafka_error)
 	{
-		this->error = this->get_resp()->get_cgroup()->get_error();
+		this->error = WFT_ERR_KAFKA_CGROUP_FAILED;
 		this->state = WFT_STATE_TASK_ERROR;
 		return false;
 	}
 	else
 	{
+		this->get_req()->set_cgroup(*cgroup);
 		is_redirect_ = check_redirect();
 		this->get_req()->set_api_type(Kafka_JoinGroup);
 		return true;
@@ -450,12 +493,13 @@ bool __ComplexKafkaTask::process_join_group()
 		this->get_req()->set_api_type(Kafka_JoinGroup);
 		break;
 
-	case KAFKA_NONE:
+	case 0:
 		this->get_req()->set_api_type(Kafka_Metadata);
 		break;
 
 	default:
-		this->error = msg->get_cgroup()->get_error();
+		ctx_.kafka_error = msg->get_cgroup()->get_error();
+		this->error = WFT_ERR_KAFKA_CGROUP_FAILED;
 		this->state = WFT_STATE_TASK_ERROR;
 		return false;
 	}
@@ -465,9 +509,10 @@ bool __ComplexKafkaTask::process_join_group()
 
 bool __ComplexKafkaTask::process_sync_group()
 {
-	if (this->get_resp()->get_cgroup()->get_error())
+	ctx_.kafka_error = this->get_resp()->get_cgroup()->get_error();
+	if (ctx_.kafka_error)
 	{
-		this->error = this->get_resp()->get_cgroup()->get_error();
+		this->error = WFT_ERR_KAFKA_CGROUP_FAILED;
 		this->state = WFT_STATE_TASK_ERROR;
 		return false;
 	}
@@ -490,15 +535,17 @@ bool __ComplexKafkaTask::process_metadata()
 		case KAFKA_LEADER_NOT_AVAILABLE:
 			this->get_req()->set_api_type(Kafka_Metadata);
 			return true;
-		case KAFKA_NONE:
+		case 0:
 			break;
 		default:
-			this->error = meta->get_error();
+			ctx_.kafka_error = meta->get_error();
+			this->error = WFT_ERR_KAFKA_META_FAILED;
 			this->state = WFT_STATE_TASK_ERROR;
 			return false;
 		}
 	}
 
+	this->get_req()->set_meta_list(*msg->get_meta_list());
 	if (msg->get_cgroup()->get_group())
 	{
 		if (msg->get_cgroup()->is_leader())
@@ -547,11 +594,12 @@ bool __ComplexKafkaTask::process_fetch()
 		case KAFKA_FENCED_LEADER_EPOCH:
 			this->get_req()->set_api_type(Kafka_Metadata);
 			return true;
-		case KAFKA_NONE:
+		case 0:
 		case KAFKA_OFFSET_OUT_OF_RANGE:
 			break;
 		default:
-			this->error = toppar->get_error();
+			ctx_.kafka_error = toppar->get_error();
+			this->error = WFT_ERR_KAFKA_FETCH_FAILED;
 			this->state = WFT_STATE_TASK_ERROR;
 			return false;
 		}
@@ -597,7 +645,7 @@ bool __ComplexKafkaTask::process_produce()
 		case KAFKA_FENCED_LEADER_EPOCH:
 			this->get_req()->set_api_type(Kafka_Metadata);
 			return true;
-		case KAFKA_NONE:
+		case 0:
 			break;
 		default:
 			this->error = toppar->get_error();
@@ -610,9 +658,10 @@ bool __ComplexKafkaTask::process_produce()
 
 bool __ComplexKafkaTask::process_sasl_handshake()
 {
-	if (this->get_resp()->get_broker()->get_error())
+	ctx_.kafka_error = this->get_resp()->get_broker()->get_error();
+	if (ctx_.kafka_error)
 	{
-		this->error = this->get_resp()->get_broker()->get_error();
+		this->error = WFT_ERR_KAFKA_SASL_DISALLOWED;
 		this->state = WFT_STATE_TASK_ERROR;
 		return false;
 	}
@@ -621,9 +670,10 @@ bool __ComplexKafkaTask::process_sasl_handshake()
 
 bool __ComplexKafkaTask::process_sasl_authenticate()
 {
-	if (this->get_resp()->get_broker()->get_error())
+	ctx_.kafka_error = this->get_resp()->get_broker()->get_error();
+	if (ctx_.kafka_error)
 	{
-		this->error = this->get_resp()->get_broker()->get_error();
+		this->error = WFT_ERR_KAFKA_SASL_DISALLOWED;
 		this->state = WFT_STATE_TASK_ERROR;
 	}
 	return false;
@@ -668,14 +718,15 @@ bool __ComplexKafkaTask::has_next()
 	case Kafka_LeaveGroup:
 	case Kafka_DescribeGroups:
 	case Kafka_Heartbeat:
-		this->error = this->get_resp()->get_cgroup()->get_error();
-		if (this->error)
+		ctx_.kafka_error = this->get_resp()->get_cgroup()->get_error();
+		if (ctx_.kafka_error)
+		{
+			this->error = WFT_ERR_KAFKA_CGROUP_FAILED;
 			this->state = WFT_STATE_TASK_ERROR;
+		}
+
 		break;
 	case Kafka_ApiVersions:
-		this->error = errno;
-		if (this->error)
-			this->state = WFT_STATE_TASK_ERROR;
 		break;
 	default:
 		this->state = WFT_STATE_TASK_ERROR;
@@ -724,11 +775,10 @@ bool __ComplexKafkaTask::finish_once()
 		this->disable_retry();
 		this->get_resp()->set_api_type(this->get_req()->get_api_type());
 		this->get_resp()->set_api_version(this->get_req()->get_api_version());
-		this->get_resp()->duplicate(*this->get_req());
 	}
 
-	if (*get_mutable_ctx())
-		(*get_mutable_ctx())(this);
+	if (ctx_.cb)
+		ctx_.cb(this);
 
 	return true;
 }

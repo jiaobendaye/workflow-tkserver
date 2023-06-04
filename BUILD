@@ -39,12 +39,12 @@ cc_library(
 cc_library(
 	name = 'common',
 	srcs = [
-		'src/algorithm/DnsRoutine.cc',
 		'src/client/WFDnsClient.cc',
 		'src/factory/DnsTaskImpl.cc',
 		'src/factory/FileTaskImpl.cc',
 		'src/factory/WFGraphTask.cc',
 		'src/factory/WFResourcePool.cc',
+		'src/factory/WFMessageQueue.cc',
 		'src/factory/WFTaskFactory.cc',
 		'src/factory/Workflow.cc',
 		'src/manager/DnsCache.cc',
@@ -92,6 +92,7 @@ cc_library(
 		'src/protocol/HttpMessage.h',
 		'src/protocol/HttpUtil.h',
 		'src/protocol/http_parser.h',
+		'src/factory/WFHttpServerTask.h',
 		'src/server/WFHttpServer.h',
 	],
 	includes = [
@@ -165,6 +166,7 @@ cc_library(
 	],
 	visibility = ["//visibility:public"],
 )
+
 cc_library(
 	name = 'upstream',
 	hdrs = [
@@ -186,6 +188,30 @@ cc_library(
 	],
 	visibility = ["//visibility:public"],
 )
+
+cc_library(
+	name = 'kafka_message',
+	hdrs = [
+		'src/factory/KafkaTaskImpl.inl',
+		'src/protocol/KafkaDataTypes.h',
+		'src/protocol/KafkaMessage.h',
+		'src/protocol/KafkaResult.h',
+		'src/protocol/kafka_parser.h',
+	],
+	includes = [
+		'src/factory',
+		'src/protocol',
+	],
+	srcs = [
+		'src/factory/KafkaTaskImpl.cc',
+		'src/protocol/KafkaMessage.cc',
+	],
+	copts = ['-fno-rtti'],
+	deps = [
+		':common',
+	],
+)
+
 cc_library(
 	name = 'kafka',
 	hdrs = [
@@ -203,22 +229,20 @@ cc_library(
 	],
 	srcs = [
 		'src/client/WFKafkaClient.cc',
-		'src/factory/KafkaTaskImpl.cc',
 		'src/protocol/KafkaDataTypes.cc',
-		'src/protocol/KafkaMessage.cc',
 		'src/protocol/KafkaResult.cc',
 		'src/protocol/kafka_parser.c',
 	],
-	copts = ['-fno-rtti'],
 	deps = [
 		':common',
+		':kafka_message',
 	],
 	visibility = ["//visibility:public"],
 	linkopts = [
-	    '-lsnappy',
-	    '-llz4',
-	    '-lz',
-	    '-lzstd',
+		'-lsnappy',
+		'-llz4',
+		'-lz',
+		'-lzstd',
 	],
 )
 
@@ -239,6 +263,7 @@ cc_library(
 	],
 	deps = [
 		':common',
+		':http',
 	],
 	visibility = ["//visibility:public"],
 )
@@ -341,5 +366,10 @@ cc_binary(
 	 name = 'kafka_cli',
 	 srcs = ['tutorial/tutorial-13-kafka_cli.cc'],
 	 deps = [':kafka', ':workflow_hdrs'],
-	 copts = ['-fno-rtti'],
+)
+
+cc_binary(
+	 name = 'consul_cli',
+	 srcs = ['tutorial/tutorial-14-consul_cli.cc'],
+	 deps = [':consul'],
 )

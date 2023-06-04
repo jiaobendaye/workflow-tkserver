@@ -45,7 +45,7 @@ enum
 	WFT_STATE_SSL_ERROR = 65,
 	WFT_STATE_DNS_ERROR = 66,					/* for client task only */
 	WFT_STATE_TASK_ERROR = 67,
-	WFT_STATE_ABORTED = CS_STATE_STOPPED		/* main process terminated */
+	WFT_STATE_ABORTED = CS_STATE_STOPPED
 };
 
 template<class INPUT, class OUTPUT>
@@ -299,12 +299,12 @@ protected:
 		CommRequest(object, scheduler),
 		callback(std::move(cb))
 	{
-		this->user_data = NULL;
 		this->send_timeo = -1;
 		this->receive_timeo = -1;
 		this->keep_alive_timeo = 0;
 		this->target = NULL;
 		this->timeout_reason = TOR_NOT_TIMEOUT;
+		this->user_data = NULL;
 		this->state = WFT_STATE_UNDEFINED;
 		this->error = 0;
 	}
@@ -548,13 +548,16 @@ class WFMailboxTask : public WFGenericTask
 public:
 	void send(void *msg)
 	{
-		*this->next++ = msg;
-		this->count();
+		*this->mailbox = msg;
+		if (this->flag.exchange(true))
+		{
+			this->state = WFT_STATE_SUCCESS;
+			this->subtask_done();
+		}
 	}
 
-	void **get_mailbox(size_t *n)
+	void **get_mailbox() const
 	{
-		*n = this->next - this->mailbox;
 		return this->mailbox;
 	}
 
@@ -564,20 +567,14 @@ public:
 		this->callback = std::move(cb);
 	}
 
-public:
-	virtual void count()
+protected:
+	virtual void dispatch()
 	{
-		if (--this->value == 0)
+		if (this->flag.exchange(true))
 		{
 			this->state = WFT_STATE_SUCCESS;
 			this->subtask_done();
 		}
-	}
-
-protected:
-	virtual void dispatch()
-	{
-		this->WFMailboxTask::count();
 	}
 
 	virtual SubTask *done()
@@ -593,23 +590,20 @@ protected:
 
 protected:
 	void **mailbox;
-	std::atomic<void **> next;
-	std::atomic<size_t> value;
+	std::atomic<bool> flag;
 	std::function<void (WFMailboxTask *)> callback;
 
 public:
-	WFMailboxTask(void **mailbox, size_t size,
+	WFMailboxTask(void **mailbox,
 				  std::function<void (WFMailboxTask *)>&& cb) :
-		next(mailbox),
-		value(size + 1),
+		flag(false),
 		callback(std::move(cb))
 	{
 		this->mailbox = mailbox;
 	}
 
 	WFMailboxTask(std::function<void (WFMailboxTask *)>&& cb) :
-		next(&this->user_data),
-		value(2),
+		flag(false),
 		callback(std::move(cb))
 	{
 		this->mailbox = &this->user_data;
@@ -719,6 +713,131 @@ public:
 
 protected:
 	virtual ~WFGoTask() { }
+};
+
+class WFRepeaterTask : public WFGenericTask
+{
+public:
+	void set_create(std::function<SubTask *(WFRepeaterTask *)> create)
+	{
+		this->create = std::move(create);
+	}
+
+	void set_callback(std::function<void (WFRepeaterTask *)> cb)
+	{
+		this->callback = std::move(cb);
+	}
+
+protected:
+	virtual void dispatch()
+	{
+		SubTask *task = this->create(this);
+
+		if (task)
+		{
+			series_of(this)->push_front(this);
+			series_of(this)->push_front(task);
+		}
+		else
+			this->state = WFT_STATE_SUCCESS;
+
+		this->subtask_done();
+	}
+
+	virtual SubTask *done()
+	{
+		SeriesWork *series = series_of(this);
+
+		if (this->state != WFT_STATE_UNDEFINED)
+		{
+			if (this->callback)
+				this->callback(this);
+
+			delete this;
+		}
+
+		return series->pop();
+	}
+
+protected:
+	std::function<SubTask *(WFRepeaterTask *)> create;
+	std::function<void (WFRepeaterTask *)> callback;
+
+public:
+	WFRepeaterTask(std::function<SubTask *(WFRepeaterTask *)>&& create,
+				   std::function<void (WFRepeaterTask *)>&& cb) :
+		create(std::move(create)),
+		callback(std::move(cb))
+	{
+	}
+
+protected:
+	virtual ~WFRepeaterTask() { }
+};
+
+class WFModuleTask : public ParallelTask, protected SeriesWork
+{
+public:
+	void start()
+	{
+		assert(!series_of(this));
+		Workflow::start_series_work(this, nullptr);
+	}
+
+	void dismiss()
+	{
+		assert(!series_of(this));
+		delete this;
+	}
+
+public:
+	SeriesWork *sub_series() { return this; }
+
+	const SeriesWork *sub_series() const { return this; }
+
+public:
+	void *user_data;
+
+public:
+	void set_callback(std::function<void (const WFModuleTask *)> cb)
+	{
+		this->callback = std::move(cb);
+	}
+
+protected:
+	virtual SubTask *done()
+	{
+		SeriesWork *series = series_of(this);
+
+		if (this->callback)
+			this->callback(this);
+
+		delete this;
+		return series->pop();
+	}
+
+protected:
+	SubTask *first;
+	std::function<void (const WFModuleTask *)> callback;
+
+public:
+	WFModuleTask(SubTask *first,
+				 std::function<void (const WFModuleTask *)>&& cb) :
+		ParallelTask(&this->first, 1),
+		SeriesWork(first, nullptr),
+		callback(std::move(cb))
+	{
+		this->first = first;
+		this->set_in_parallel(this);
+		this->user_data = NULL;
+	}
+
+protected:
+	virtual ~WFModuleTask()
+	{
+		if (!this->is_finished())
+			this->dismiss_recursive();
+	}
 };
 
 #include "WFTask.inl"

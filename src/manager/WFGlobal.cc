@@ -325,33 +325,13 @@ public:
 	static __CommManager *get_instance()
 	{
 		static __CommManager kInstance;
+		__CommManager::created_ = true;
 		return &kInstance;
 	}
 
 	CommScheduler *get_scheduler() { return &scheduler_; }
-	IOService *get_io_service()
-	{
-		if (!fio_flag_)
-		{
-			fio_mutex_.lock();
-			if (!fio_flag_)
-			{
-				fio_service_ = new __FileIOService(&scheduler_);
-				//todo EAGAIN 65536->2
-				if (fio_service_->init(8192) < 0)
-					abort();
-
-				if (fio_service_->bind() < 0)
-					abort();
-
-				fio_flag_ = true;
-			}
-
-			fio_mutex_.unlock();
-		}
-
-		return fio_service_;
-	}
+	IOService *get_io_service();
+	static bool is_created() { return created_; }
 
 private:
 	__CommManager():
@@ -382,7 +362,37 @@ private:
 	__FileIOService *fio_service_;
 	volatile bool fio_flag_;
 	std::mutex fio_mutex_;
+
+private:
+	static bool created_;
 };
+
+bool __CommManager::created_ = false;
+
+inline IOService *__CommManager::get_io_service()
+{
+	if (!fio_flag_)
+	{
+		fio_mutex_.lock();
+		if (!fio_flag_)
+		{
+			int maxevents = WFGlobal::get_global_settings()->fio_max_events;
+
+			fio_service_ = new __FileIOService(&scheduler_);
+			if (fio_service_->init(maxevents) < 0)
+				abort();
+
+			if (fio_service_->bind() < 0)
+				abort();
+
+			fio_flag_ = true;
+		}
+
+		fio_mutex_.unlock();
+	}
+
+	return fio_service_;
+}
 
 class __ExecManager
 {
@@ -396,40 +406,7 @@ public:
 		return &kInstance;
 	}
 
-	ExecQueue *get_exec_queue(const std::string& queue_name)
-	{
-		ExecQueue *queue = NULL;
-		ExecQueueMap::const_iterator iter;
-
-		pthread_rwlock_rdlock(&rwlock_);
-		iter = queue_map_.find(queue_name);
-		if (iter != queue_map_.cend())
-			queue = iter->second;
-
-		pthread_rwlock_unlock(&rwlock_);
-		if (queue)
-			return queue;
-
-		pthread_rwlock_wrlock(&rwlock_);
-		iter = queue_map_.find(queue_name);
-		if (iter == queue_map_.cend())
-		{
-			queue = new ExecQueue();
-			if (queue->init() >= 0)
-				queue_map_.emplace(queue_name, queue);
-			else
-			{
-				delete queue;
-				queue = NULL;
-			}
-		}
-		else
-			queue = iter->second;
-
-		pthread_rwlock_unlock(&rwlock_);
-		return queue;
-	}
-
+	ExecQueue *get_exec_queue(const std::string& queue_name);
 	Executor *get_compute_executor() { return &compute_executor_; }
 
 private:
@@ -461,6 +438,40 @@ private:
 	ExecQueueMap queue_map_;
 	Executor compute_executor_;
 };
+
+inline ExecQueue *__ExecManager::get_exec_queue(const std::string& queue_name)
+{
+	ExecQueue *queue = NULL;
+	ExecQueueMap::const_iterator iter;
+
+	pthread_rwlock_rdlock(&rwlock_);
+	iter = queue_map_.find(queue_name);
+	if (iter != queue_map_.cend())
+		queue = iter->second;
+
+	pthread_rwlock_unlock(&rwlock_);
+	if (queue)
+		return queue;
+
+	pthread_rwlock_wrlock(&rwlock_);
+	iter = queue_map_.find(queue_name);
+	if (iter == queue_map_.cend())
+	{
+		queue = new ExecQueue();
+		if (queue->init() >= 0)
+			queue_map_.emplace(queue_name, queue);
+		else
+		{
+			delete queue;
+			queue = NULL;
+		}
+	}
+	else
+		queue = iter->second;
+
+	pthread_rwlock_unlock(&rwlock_);
+	return queue;
+}
 
 #define MAX(x, y)	((x) >= (y) ? (x) : (y))
 #define HOSTS_LINEBUF_INIT_SIZE	128
@@ -628,6 +639,11 @@ DnsCache WFGlobal::dns_cache_;
 WFDnsResolver WFGlobal::dns_resolver_;
 WFNameService WFGlobal::name_service_(&WFGlobal::dns_resolver_);
 
+bool WFGlobal::is_scheduler_created()
+{
+	return __CommManager::is_created();
+}
+
 CommScheduler *WFGlobal::get_scheduler()
 {
 	return __CommManager::get_instance()->get_scheduler();
@@ -689,14 +705,22 @@ void WFGlobal::register_scheme_port(const std::string& scheme,
 	__WFGlobal::get_instance()->register_scheme_port(scheme, port);
 }
 
-void WFGlobal::sync_operation_begin()
+int WFGlobal::sync_operation_begin()
 {
-	__WFGlobal::get_instance()->sync_operation_begin();
+	if (WFGlobal::is_scheduler_created() &&
+		WFGlobal::get_scheduler()->is_handler_thread())
+	{
+		__WFGlobal::get_instance()->sync_operation_begin();
+		return 1;
+	}
+
+	return 0;
 }
 
-void WFGlobal::sync_operation_end()
+void WFGlobal::sync_operation_end(int cookie)
 {
-	__WFGlobal::get_instance()->sync_operation_end();
+	if (cookie)
+		__WFGlobal::get_instance()->sync_operation_end();
 }
 
 static inline const char *__get_ssl_error_string(int error)
@@ -825,6 +849,18 @@ static inline const char *__get_task_error_string(int error)
 	case WFT_ERR_KAFKA_VERSION_DISALLOWED:
 		return "Kafka broker version not supported";
 
+    case WFT_ERR_KAFKA_SASL_DISALLOWED:
+        return "Kafka sasl disallowed";
+	
+    case WFT_ERR_KAFKA_ARRANGE_FAILED:
+        return "Kafka arrange failed";
+	
+    case WFT_ERR_KAFKA_LIST_OFFSETS_FAILED:
+        return "Kafka list offsets failed";
+
+    case WFT_ERR_KAFKA_CGROUP_ASSIGN_FAILED:
+        return "Kafka cgroup assign failed";
+			
 	case WFT_ERR_CONSUL_API_UNKNOWN:
 		return "Consul api type unknown";
 
