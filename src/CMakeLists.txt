@@ -40,7 +40,7 @@ set(STATIC_LIB_NAME ${PROJECT_NAME}-static)
 set(SHARED_LIB_NAME ${PROJECT_NAME}-shared)
 
 add_library(
-	${STATIC_LIB_NAME} STATIC
+	${SHARED_LIB_NAME} SHARED
 	$<TARGET_OBJECTS:kernel>
 	$<TARGET_OBJECTS:util>
 	$<TARGET_OBJECTS:manager>
@@ -52,7 +52,7 @@ add_library(
 )
 
 add_library(
-	${SHARED_LIB_NAME} SHARED
+	${STATIC_LIB_NAME} STATIC
 	$<TARGET_OBJECTS:kernel>
 	$<TARGET_OBJECTS:util>
 	$<TARGET_OBJECTS:manager>

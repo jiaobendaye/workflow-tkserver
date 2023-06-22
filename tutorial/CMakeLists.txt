@@ -7,6 +7,7 @@ project(tutorial
 )
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR})
+set(CMAKE_EXPORT_COMPILE_COMMANDS on)
 
 if(ANDROID)
 	link_directories(${OPENSSL_LINK_DIR})
@@ -59,6 +60,8 @@ foreach(src ${TUTORIAL_LIST})
 	list(GET arr -1 bin_name)
 	add_executable(${bin_name} ${src}.cc)
 	target_link_libraries(${bin_name} ${WORKFLOW_LIB})
+	set_target_properties(${bin_name} PROPERTIES
+		RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/bin)
 endforeach()
 
 if (NOT REDIS STREQUAL "n")
@@ -71,6 +74,8 @@ foreach(src ${TUTORIAL_LIST})
 	list(GET arr -1 bin_name)
 	add_executable(${bin_name} ${src}.cc)
 	target_link_libraries(${bin_name} ${WORKFLOW_LIB})
+	set_target_properties(${bin_name} PROPERTIES
+		RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/bin)
 endforeach()
 endif()
 
@@ -83,6 +88,8 @@ foreach(src ${TUTORIAL_LIST})
 	list(GET arr -1 bin_name)
 	add_executable(${bin_name} ${src}.cc)
 	target_link_libraries(${bin_name} ${WORKFLOW_LIB})
+	set_target_properties(${bin_name} PROPERTIES
+		RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/bin)
 endforeach()
 endif()
 
@@ -95,28 +102,36 @@ foreach(src ${TUTORIAL_LIST})
 	list(GET arr -1 bin_name)
 	add_executable(${bin_name} ${src}.cc)
 	target_link_libraries(${bin_name} ${WORKFLOW_LIB})
+	set_target_properties(${bin_name} PROPERTIES
+		RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/bin)
 endforeach()
 endif()
 
 if (KAFKA STREQUAL "y")
 	add_executable("kafka_cli" "tutorial-13-kafka_cli.cc")
 	target_link_libraries("kafka_cli" wfkafka ${WORKFLOW_LIB} z snappy lz4 zstd)
+	set_target_properties(${bin_name} PROPERTIES
+		RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/bin)
 endif ()
 
 set(DIR10 tutorial-10-user_defined_protocol)
-add_executable(server ${DIR10}/server.cc ${DIR10}/message.cc)
-add_executable(client ${DIR10}/client.cc ${DIR10}/message.cc)
-add_executable(server-uds ${DIR10}/server-uds.cc ${DIR10}/message.cc)
-add_executable(client-uds ${DIR10}/client-uds.cc ${DIR10}/message.cc)
-target_link_libraries(server ${WORKFLOW_LIB})
-target_link_libraries(client ${WORKFLOW_LIB})
-target_link_libraries(server-uds ${WORKFLOW_LIB})
-target_link_libraries(client-uds ${WORKFLOW_LIB})
+add_executable(TcpServer ${DIR10}/server.cc ${DIR10}/message.cc)
+add_executable(TcpClient ${DIR10}/client.cc ${DIR10}/message.cc)
+add_executable(TcpServer-uds ${DIR10}/server-uds.cc ${DIR10}/message.cc)
+add_executable(TcpClient-uds ${DIR10}/client-uds.cc ${DIR10}/message.cc)
+target_link_libraries(TcpServer ${WORKFLOW_LIB})
+target_link_libraries(TcpClient ${WORKFLOW_LIB})
+target_link_libraries(TcpServer-uds ${WORKFLOW_LIB})
+target_link_libraries(TcpClient-uds ${WORKFLOW_LIB})
 
-set_target_properties(server PROPERTIES
-	RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/${DIR10})
-set_target_properties(client PROPERTIES
-	RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/${DIR10})
+set_target_properties(TcpServer PROPERTIES
+	RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/${DIR10}/bin)
+set_target_properties(TcpClient PROPERTIES
+	RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/${DIR10}/bin)
+set_target_properties(TcpServer-uds PROPERTIES
+	RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/${DIR10}/bin)
+set_target_properties(TcpClient-uds PROPERTIES
+	RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/${DIR10}/bin)
 
 set(DIRTK TKMessage)
 add_executable(TKServer ${DIRTK}/TKServer.cc ${DIRTK}/TKMessage.cc ${DIRTK}/TKHttpMsg.cc)
@@ -125,13 +140,9 @@ target_link_libraries(TKServer ${WORKFLOW_LIB})
 target_link_libraries(TKClient ${WORKFLOW_LIB})
 
 set_target_properties(TKServer PROPERTIES
-	RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/${DIRTK})
+	RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/${DIRTK}/bin)
 set_target_properties(TKClient PROPERTIES
-	RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/${DIRTK})
-set_target_properties(server-uds PROPERTIES
-	RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/${DIR10})
-set_target_properties(client-uds PROPERTIES
-	RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/${DIR10})
+	RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/${DIRTK}/bin)
 
 set(DIR16 tutorial-16-graceful_restart)
 add_executable(bootstrap ${DIR16}/bootstrap.c)
@@ -139,6 +150,6 @@ add_executable(bootstrap_server ${DIR16}/server.cc)
 target_link_libraries(bootstrap_server ${WORKFLOW_LIB})
 
 set_target_properties(bootstrap PROPERTIES
-	RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/${DIR16})
+	RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/${DIR16}/bin)
 set_target_properties(bootstrap_server PROPERTIES OUTPUT_NAME "server"
-	RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/${DIR16})
+	RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/${DIR16}/bin)
