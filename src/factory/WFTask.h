@@ -113,98 +113,6 @@ protected:
 	virtual ~WFThreadTask() { }
 };
 
-template<class INPUT, class OUTPUT>
-class WFMultiThreadTask : public ParallelTask
-{
-public:
-	void start()
-	{
-		assert(!series_of(this));
-		Workflow::start_series_work(this, nullptr);
-	}
-
-	void dismiss()
-	{
-		assert(!series_of(this));
-		delete this;
-	}
-
-public:
-	INPUT *get_input(size_t index)
-	{
-		return static_cast<Thread *>(this->subtasks[index])->get_input();
-	}
-
-	OUTPUT *get_output(size_t index)
-	{
-		return static_cast<Thread *>(this->subtasks[index])->get_output();
-	}
-
-public:
-	void *user_data;
-
-public:
-	int get_state(size_t index) const
-	{
-		return static_cast<const Thread *>(this->subtasks[index])->get_state();
-	}
-
-	int get_error(size_t index) const
-	{
-		return static_cast<const Thread *>(this->subtasks[index])->get_error();
-	}
-
-public:
-	void set_callback(
-		std::function<void (WFMultiThreadTask<INPUT, OUTPUT> *)> cb)
-	{
-		this->callback = std::move(cb);
-	}
-
-protected:
-	virtual SubTask *done()
-	{
-		SeriesWork *series = series_of(this);
-
-		if (this->callback)
-			this->callback(this);
-
-		delete this;
-		return series->pop();
-	}
-
-protected:
-	std::function<void (WFMultiThreadTask<INPUT, OUTPUT> *)> callback;
-
-protected:
-	using Thread = WFThreadTask<INPUT, OUTPUT>;
-
-public:
-	WFMultiThreadTask(Thread *const tasks[], size_t n,
-			std::function<void (WFMultiThreadTask<INPUT, OUTPUT> *)>&& cb) :
-		ParallelTask(new SubTask *[n], n),
-		callback(std::move(cb))
-	{
-		size_t i;
-
-		for (i = 0; i < n; i++)
-			this->subtasks[i] = tasks[i];
-
-		this->user_data = NULL;
-	}
-
-protected:
-	virtual ~WFMultiThreadTask()
-	{
-		size_t n = this->subtasks_nr;
-
-		while (n > 0)
-			delete this->subtasks[--n];
-
-		delete []this->subtasks;
-	}
-};
-
 template<class REQ, class RESP>
 class WFNetworkTask : public CommRequest
 {
@@ -279,10 +187,16 @@ public:
 	   Always returns 'true' in callback. */
 	bool closed() const
 	{
-		if (this->state == WFT_STATE_TOREPLY)
-			return !this->get_target()->has_idle_conn();
-		else
-			return this->state != WFT_STATE_UNDEFINED;
+		switch (this->state)
+		{
+		case WFT_STATE_UNDEFINED:
+			return false;
+		case WFT_STATE_TOREPLY:
+		case WFT_STATE_NOREPLY:
+			return !this->target->has_idle_conn();
+		default:
+			return true;
+		}
 	}
 
 public:

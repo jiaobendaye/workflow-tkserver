@@ -1,13 +1,9 @@
-# 关于TLV(Type-Length-Value)格式的消息
-TLV消息是一种由类型，长度，内容组成的消息。由于其结构简单通用，而且方便嵌套和扩展，特别适用于定义通信消息。  
-为方便用户实现自定义协议，我们内置了TLV消息的支持。  
-
-# TLV消息的结构
-TLV消息并没有具体规定Type和Length这两个字段占的字节数据。在我们的协议里，它们分别占4字节（网络序）。  
-也就是说，我们的消息有8字节的消息头，以及不超过32GB的Value内容。Type和Value域的含义我们不做规定。  
-
-# TLVMessage类
-由于TLV的定义内容很少，所以[TLVMessage](/src/protocol/TLVMessage.h)需要用到的接口很少。
+# About TLV (Type-Length-Value) format message
+A TLV message is a message consisting of type, length, and value. Because its format is simple and universal, and it is convenient for nesting and expansion, it is especially suitable for defining communication messages. To facilitate users to implement custom protocols, we have built-in support for TLV messages.
+# TLV message structure
+The general TLV structure does not specify the bytes of the Type or Length field. In our protocol, they occupy 4 bytes each (network order). In other words, our message has an 8-byte message header and a Value content of no more than 32GB. We do not specify the meaning of the Type and Value fields.
+# TLVMessage class
+Because the definition of TLV format is simple. The interfaces of this TLVMessage are very simple too.
 ~~~cpp
 namespace protocol
 {
@@ -31,11 +27,9 @@ using TLVRequest = TLVMessage;
 using TLVResposne = TLVMessage;
 }
 ~~~
-用户直接使用TLV消息来做数据传输的话，只需要用到上面的几个接口。分别为设置和获取Type与Value。  
-Value直接以std::string返回，方便用户必要的时候直接通过std::move移动数据。  
-
-# 基于TLV消息的echo server/client
-以下代码，直接启动一个基于TLV消息的server，并通过命令行产生client task进行交互。建议运行一下：
+If users directly use TLV messages for data transmission, they only need to use the above interfaces. Set and get Type and Value respectively. Value is directly returned as ``std::string``, which is convenient for users to move data directly through ``std::move`` when necessary.
+# An echo server/client example based on TLV message
+The following code directly starts a server based on TLV messages, and generates a client task through the command line for interaction.
 ~~~cpp
 #include <stdio.h>
 #include <string>
@@ -101,15 +95,12 @@ int main()
     server.stop();
     return 0;
 }
-
 ~~~
-
-# 派生TLVMessage
-上面的echo server实例，我们直接使用了原始的TLVMessage。但建议在具体的应用中，用户可以对消息进行派生。  
-在派生类里，提供更加丰富的接口来设置和提取消息内容，避免直接操作原始Value域，并形成自己的二级协议。  
-例如，我们实现一个JSON的协议，可以：
+# To extend TLVMessage
+In the echo server example above, we directly use the original TLVMessage. However, it is suggested that in specific applications, users can derive TLVMessage. In the derived class, provide a richer interface to set and extract message content, avoid direct manipulation of the original Value field, and form its own secondary protocol.
+For example, if we implement a JSON protocol, we can:
 ~~~cpp
-#include "workflow/json-parser.h"    // 内置的json解析器
+#include "workflow/json-parser.h"    // built-in JSON parser
 
 class JsonMessage : public TLVMessage
 {
@@ -117,13 +108,13 @@ public:
     void set_json_value(const json_value_t *val)
     {
         this->type = JSON_TYPE;
-        this->json_to_string(val, &this->value);  // 需要实现一下
+        this->json_to_string(val, &this->value);  // you have to implement this function
     }
 
     json_value_t *get_json_value() const
     {
         if (this->type == JSON_TYPE)
-            return json_parser_parse(this->value.c_str());  // json-parser的函数
+            return json_parser_parse(this->value.c_str());  // json-parser's interface
         else
             return NULL;
     }
@@ -134,4 +125,4 @@ using JsonResponse = JsonMessage;
 
 using JsonServer = WFServer<JsonRequest, JsonResponse>;
 ~~~
-这个例子只是为了说明派生的重要性，实际应用中，派生类可能要远远比这个复杂。  
+This example is just to illustrate the importance of derivation. In actual applications, derived classes may be far more complicated than this.
