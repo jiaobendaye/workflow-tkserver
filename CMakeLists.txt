@@ -7,7 +7,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS on)
 
 project(
 	workflow
-	VERSION 0.11.1
+	VERSION 0.11.2
 	LANGUAGES C CXX
 )
 
