@@ -76,8 +76,11 @@ public:
 
 	virtual ~TKMessage()
 	{
-		free(this->body);
-		this->body = nullptr;
+		if (this->body)
+		{
+			free(this->body);
+			this->body = nullptr;
+		}
 	}
 };
 

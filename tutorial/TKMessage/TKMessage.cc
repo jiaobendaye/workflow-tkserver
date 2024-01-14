@@ -17,7 +17,7 @@ int TKMessage::encode(struct iovec vectors[], int max/*max==8192*/)
     //TODO bigendian process
 	vectors[0].iov_base = &this->header;
 	vectors[0].iov_len = TKHEADERSIZE;
-	printf("send tkmsg with length: %u \n", this->header.length);
+	// printf("send tkmsg with length: %u \n", this->header.length);
 	if (this->header.length)
 	{
 		vectors[1].iov_base = this->body;
@@ -80,17 +80,19 @@ int TKMessage::append(const void *buf, size_t size)
 		return 0;
 	}
 
-	// this->body_received = this->header.length;
-	printf("recv tkmsg with length: %u \n",this->header.length);
+	// printf("recv tkmsg with length: %u \n",this->header.length);
 	return 1;
 }
 
 
 int TKMessage::set_message_body_nocopy(const void *body, size_t size)
 {
-	free(this->body);
+	if (this->body) 
+	{
+		free(this->body);
+	}
 	this->body = (char*)body;
-    this->header.length = size;
+	this->header.length = size;
 
 	this->head_received = TKHEADERSIZE;
 	this->body_received = size;
@@ -104,26 +106,20 @@ int TKMessage::set_message_body(const void *body, size_t size)
 		return -1;
 
 	memcpy(p, body, size);
-	free(this->body);
-	this->body = (char*)p;
-    this->header.length = size;
-
-	this->head_received = TKHEADERSIZE;
-	this->body_received = size;
-	return 0;
+	return set_message_body_nocopy(p, size);
 }
 
 TKMessage::TKMessage(TKMessage&& msg) :
 	ProtocolMessage(std::move(msg))
 {
-    memcpy(&this->header, &msg.header, TKHEADERSIZE);
+	memcpy(&this->header, &msg.header, TKHEADERSIZE);
 	this->head_received = msg.head_received;
 	free(this->body);
 	this->body = msg.body;
 	this->body_received = msg.body_received;
 
 	msg.head_received = 0;
-	msg.body = NULL;
+	msg.body = nullptr;
 }
 
 TKMessage& TKMessage::operator = (TKMessage&& msg)
@@ -139,7 +135,7 @@ TKMessage& TKMessage::operator = (TKMessage&& msg)
 		this->body_received = msg.body_received;
 
 		msg.head_received = 0;
-		msg.body = NULL;
+		msg.body = nullptr;
 	}
 
 	return *this;
