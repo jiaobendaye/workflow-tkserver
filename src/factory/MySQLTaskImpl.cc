@@ -45,6 +45,7 @@ protected:
 	virtual CommMessageOut *message_out();
 	virtual CommMessageIn *message_in();
 	virtual int keep_alive_timeout();
+	virtual int first_timeout();
 	virtual bool init_success();
 	virtual bool finish_once();
 
@@ -100,8 +101,8 @@ private:
 		MySSLWrapper(ProtocolMessage *msg, SSL *ssl) :
 			SSLWrapper(msg, ssl)
 		{ }
-		ProtocolMessage *get_msg() const { return this->msg; }
-		virtual ~MySSLWrapper() { delete this->msg; }
+		ProtocolMessage *get_msg() const { return this->message; }
+		virtual ~MySSLWrapper() { delete this->message; }
 	};
 
 private:
@@ -241,7 +242,7 @@ CommMessageOut *ComplexMySQLTask::message_out()
 		break;
 
 	case ST_FIRST_USER_REQUEST:
-		if (this->is_fixed_addr())
+		if (this->is_fixed_conn())
 		{
 			auto *target = (RouteManager::RouteTarget *)this->target;
 
@@ -350,7 +351,21 @@ int ComplexMySQLTask::check_handshake(MySQLHandshakeResponse *resp)
 
 	if (is_ssl_)
 	{
-		if (!(resp->get_capability_flags() & 0x800))
+		if (resp->get_capability_flags() & 0x800)
+		{
+			static SSL_CTX *ssl_ctx = WFGlobal::get_ssl_client_ctx();
+
+			ssl = __create_ssl(ssl_ctx_ ? ssl_ctx_ : ssl_ctx);
+			if (!ssl)
+			{
+				state_ = WFT_STATE_SYS_ERROR;
+				error_ = errno;
+				return 0;
+			}
+
+			SSL_set_connect_state(ssl);
+		}
+		else
 		{
 			this->resp = std::move(*(MySQLResponse *)resp);
 			state_ = WFT_STATE_TASK_ERROR;
@@ -358,15 +373,6 @@ int ComplexMySQLTask::check_handshake(MySQLHandshakeResponse *resp)
 			return 0;
 		}
 
-		ssl = __create_ssl(WFGlobal::get_ssl_client_ctx());
-		if (!ssl)
-		{
-			state_ = WFT_STATE_SYS_ERROR;
-			error_ = errno;
-			return 0;
-		}
-
-		SSL_set_connect_state(ssl);
 	}
 
 	auto *conn = this->get_connection();
@@ -516,6 +522,11 @@ int ComplexMySQLTask::keep_alive_timeout()
 
 	conn->mysql_seqid = resp->get_seqid() + 1;
 	return MYSQL_KEEPALIVE_DEFAULT;
+}
+
+int ComplexMySQLTask::first_timeout()
+{
+	return is_user_request_ ? this->watch_timeo : 0;
 }
 
 /*
@@ -712,9 +723,9 @@ bool ComplexMySQLTask::init_success()
 
 	if (!transaction.empty())
 	{
-		this->WFComplexClientTask::set_info(std::string("?maxconn=1&") +
-											info + "|txn:" + transaction);
 		this->set_fixed_addr(true);
+		this->set_fixed_conn(true);
+		this->WFComplexClientTask::set_info(info + ("|txn:" + transaction));
 	}
 	else
 		this->WFComplexClientTask::set_info(info);
@@ -741,7 +752,7 @@ bool ComplexMySQLTask::finish_once()
 		return false;
 	}
 
-	if (this->is_fixed_addr())
+	if (this->is_fixed_conn())
 	{
 		if (this->state != WFT_STATE_SUCCESS || this->keep_alive_timeo == 0)
 		{
@@ -767,7 +778,7 @@ WFMySQLTask *WFTaskFactory::create_mysql_task(const std::string& url,
 
 	URIParser::parse(url, uri);
 	task->init(std::move(uri));
-	if (task->is_fixed_addr())
+	if (task->is_fixed_conn())
 		task->set_keep_alive(MYSQL_KEEPALIVE_TRANSACTION);
 	else
 		task->set_keep_alive(MYSQL_KEEPALIVE_DEFAULT);
@@ -782,7 +793,7 @@ WFMySQLTask *WFTaskFactory::create_mysql_task(const ParsedURI& uri,
 	auto *task = new ComplexMySQLTask(retry_max, std::move(callback));
 
 	task->init(uri);
-	if (task->is_fixed_addr())
+	if (task->is_fixed_conn())
 		task->set_keep_alive(MYSQL_KEEPALIVE_TRANSACTION);
 	else
 		task->set_keep_alive(MYSQL_KEEPALIVE_DEFAULT);

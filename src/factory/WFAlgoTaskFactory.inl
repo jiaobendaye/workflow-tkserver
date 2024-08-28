@@ -16,7 +16,6 @@
   Author: Xie Han (xiehan@sogou-inc.com)
 */
 
-#include <assert.h>
 #include <stdlib.h>
 #include <random>
 #include <algorithm>
@@ -93,7 +92,7 @@ void __WFMergeTask<T>::execute()
 	else
 	{
 		output->last = std::merge(input->first1, input->last1,
-								  input->first2, input->first2,
+								  input->first2, input->last2,
 								  input->d_first);
 	}
 
@@ -112,7 +111,6 @@ protected:
 		if (this->flag)
 			return series_of(this)->pop();
 
-		assert(this->state == WFT_STATE_SUCCESS);
 		return this->WFSortTask<T>::done();
 	}
 
@@ -254,7 +252,7 @@ void __WFMergeTaskCmp<T, CMP>::execute()
 	else
 	{
 		output->last = std::merge(input->first1, input->last1,
-								  input->first2, input->first2,
+								  input->first2, input->last2,
 								  input->d_first,
 								  std::move(this->compare));
 	}
@@ -274,7 +272,6 @@ protected:
 		if (this->flag)
 			return series_of(this)->pop();
 
-		assert(this->state == WFT_STATE_SUCCESS);
 		return this->WFSortTask<T>::done();
 	}
 

@@ -18,9 +18,10 @@
 
 #include <string>
 #include <atomic>
+#include "DnsMessage.h"
 #include "WFTaskError.h"
 #include "WFTaskFactory.h"
-#include "DnsMessage.h"
+#include "WFServer.h"
 
 using namespace protocol;
 
@@ -102,7 +103,8 @@ bool ComplexDnsTask::init_success()
 
 		auto *ep = &WFGlobal::get_global_settings()->dns_server_params;
 		ret = WFGlobal::get_route_manager()->get(type, addr, info_, ep,
-												 uri_.host, route_result_);
+												 uri_.host, ssl_ctx_,
+												 route_result_);
 		freeaddrinfo(addr);
 		if (ret < 0)
 		{
@@ -182,5 +184,43 @@ WFDnsTask *WFTaskFactory::create_dns_task(const ParsedURI& uri,
 	task->init(uri);
 	task->set_keep_alive(DNS_KEEPALIVE_DEFAULT);
 	return task;
+}
+
+
+/**********Server**********/
+
+class WFDnsServerTask : public WFServerTask<DnsRequest, DnsResponse>
+{
+public:
+	WFDnsServerTask(CommService *service,
+					std::function<void (WFDnsTask *)>& proc) :
+		WFServerTask(service, WFGlobal::get_scheduler(), proc)
+	{
+		this->type = ((WFServerBase *)service)->get_params()->transport_type;
+	}
+
+protected:
+	virtual CommMessageIn *message_in()
+	{
+		this->get_req()->set_single_packet(this->type == TT_UDP);
+		return this->WFServerTask::message_in();
+	}
+
+	virtual CommMessageOut *message_out()
+	{
+		this->get_resp()->set_single_packet(this->type == TT_UDP);
+		return this->WFServerTask::message_out();
+	}
+
+protected:
+	enum TransportType type;
+};
+
+/**********Server Factory**********/
+
+WFDnsTask *WFServerTaskFactory::create_dns_task(CommService *service,
+						std::function<void (WFDnsTask *)>& proc)
+{
+	return new WFDnsServerTask(service, proc);
 }
 

@@ -30,10 +30,12 @@
 #include <mutex>
 #include <condition_variable>
 #include <openssl/ssl.h>
-#include <openssl/err.h>
-#include <openssl/engine.h>
-#include <openssl/conf.h>
-#include <openssl/crypto.h>
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+# include <openssl/err.h>
+# include <openssl/engine.h>
+# include <openssl/conf.h>
+# include <openssl/crypto.h>
+#endif
 #include "CommScheduler.h"
 #include "Executor.h"
 #include "WFResourcePool.h"
@@ -82,19 +84,31 @@ public:
 
 		sync_mutex_.lock();
 		inc = ++sync_count_ > sync_max_;
-
 		if (inc)
 			sync_max_ = sync_count_;
+
 		sync_mutex_.unlock();
 		if (inc)
-			WFGlobal::get_scheduler()->increase_handler_thread();
+			WFGlobal::increase_handler_thread();
 	}
 
 	void sync_operation_end()
 	{
+		int dec = 0;
+
 		sync_mutex_.lock();
-		sync_count_--;
+		if (--sync_count_ < (sync_max_ + 1) / 2)
+		{
+			dec = sync_max_ - 2 * sync_count_;
+			sync_max_ -= dec;
+		}
+
 		sync_mutex_.unlock();
+		while (dec > 0)
+		{
+			WFGlobal::decrease_handler_thread();
+			dec--;
+		}
 	}
 
 private:
@@ -421,7 +435,7 @@ private:
 	{
 		int compute_threads = WFGlobal::get_global_settings()->compute_threads;
 
-		if (compute_threads <= 0)
+		if (compute_threads < 0)
 			compute_threads = sysconf(_SC_NPROCESSORS_ONLN);
 
 		if (compute_executor_.init(compute_threads) < 0)

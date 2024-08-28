@@ -31,9 +31,8 @@
 
 class CommConnection
 {
-protected:
+public:
 	virtual ~CommConnection() { }
-	friend class Communicator;
 };
 
 class CommTarget
@@ -91,7 +90,7 @@ private:
 
 public:
 	virtual ~CommTarget() { }
-	friend class CommSession;
+	friend class CommServiceTarget;
 	friend class Communicator;
 };
 
@@ -117,6 +116,9 @@ protected:
 	/* In append(), reset the begin time of receiving to current time. */
 	virtual void renew();
 
+	/* Return the deepest wrapped message. */
+	virtual CommMessageIn *inner() { return this; }
+
 private:
 	struct CommConnEntry *entry;
 
@@ -138,7 +140,7 @@ private:
 	virtual int send_timeout() { return -1; }
 	virtual int receive_timeout() { return -1; }
 	virtual int keep_alive_timeout() { return 0; }
-	virtual int first_timeout() { return 0; }	/* for client session only. */
+	virtual int first_timeout() { return 0; }
 	virtual void handle(int state, int error) = 0;
 
 protected:
@@ -223,6 +225,7 @@ private:
 	void decref();
 
 private:
+	int reliable;
 	int listen_fd;
 	int ref;
 
@@ -285,7 +288,9 @@ public:
 
 public:
 	int is_handler_thread() const;
+
 	int increase_handler_thread();
+	int decrease_handler_thread();
 
 private:
 	struct __mpoller *mpoller;
@@ -298,16 +303,6 @@ private:
 
 	int create_handler_threads(size_t handler_threads);
 
-	int nonblock_connect(CommTarget *target);
-	int nonblock_listen(CommService *service);
-
-	struct CommConnEntry *launch_conn(CommSession *session,
-									  CommTarget *target);
-	struct CommConnEntry *accept_conn(class CommServiceTarget *target,
-									  CommService *service);
-
-	void release_conn(struct CommConnEntry *entry);
-
 	void shutdown_service(CommService *service);
 
 	void shutdown_io_service(IOService *service);
@@ -319,10 +314,13 @@ private:
 
 	int send_message(struct CommConnEntry *entry);
 
-	int request_idle_conn(CommSession *session, CommTarget *target);
-	int reply_idle_conn(CommSession *session, CommTarget *target);
-
 	int request_new_conn(CommSession *session, CommTarget *target);
+	int request_idle_conn(CommSession *session, CommTarget *target);
+
+	int reply_message_unreliable(struct CommConnEntry *entry);
+
+	int reply_reliable(CommSession *session, CommTarget *target);
+	int reply_unreliable(CommSession *session, CommTarget *target);
 
 	void handle_incoming_request(struct poller_result *res);
 	void handle_incoming_reply(struct poller_result *res);
@@ -336,6 +334,8 @@ private:
 	void handle_connect_result(struct poller_result *res);
 	void handle_listen_result(struct poller_result *res);
 
+	void handle_recvfrom_result(struct poller_result *res);
+
 	void handle_ssl_accept_result(struct poller_result *res);
 
 	void handle_sleep_result(struct poller_result *res);
@@ -344,24 +344,36 @@ private:
 
 	static void handler_thread_routine(void *context);
 
+	static int nonblock_connect(CommTarget *target);
+	static int nonblock_listen(CommService *service);
+
+	static struct CommConnEntry *launch_conn(CommSession *session,
+											 CommTarget *target);
+	static struct CommConnEntry *accept_conn(class CommServiceTarget *target,
+											 CommService *service);
+
 	static int first_timeout(CommSession *session);
 	static int next_timeout(CommSession *session);
 
 	static int first_timeout_send(CommSession *session);
 	static int first_timeout_recv(CommSession *session);
 
-	static int append_request(const void *buf, size_t *size,
+	static int append_message(const void *buf, size_t *size,
 							  poller_message_t *msg);
-	static int append_reply(const void *buf, size_t *size,
-							poller_message_t *msg);
 
 	static poller_message_t *create_request(void *context);
 	static poller_message_t *create_reply(void *context);
+
+	static int recv_request(const void *buf, size_t size,
+							struct CommConnEntry *entry);
 
 	static int partial_written(size_t n, void *context);
 
 	static void *accept(const struct sockaddr *addr, socklen_t addrlen,
 						int sockfd, void *context);
+
+	static void *recvfrom(const struct sockaddr *addr, socklen_t addrlen,
+						  const void *buf, size_t size, void *context);
 
 	static void callback(struct poller_result *res, void *context);
 
