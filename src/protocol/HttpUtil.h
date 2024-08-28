@@ -124,6 +124,7 @@ class HttpUtil
 public:
 	static void set_response_status(HttpResponse *resp, int status_code);
 	static std::string decode_chunked_body(const HttpMessage *msg);
+	static void decode_chunked_body_to_iovec(const HttpMessage *msg, struct iovec *vec, int& cnt);
 };
 
 class HttpHeaderMap

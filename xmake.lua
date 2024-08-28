@@ -38,5 +38,8 @@ set_config("buildir", "build.xmake")
 add_cflags("-fPIC", "-pipe")
 add_cxxflags("-fPIC", "-pipe", "-Wno-invalid-offsetof")
 
-includes("src", "test", "benchmark", "tutorial")
+includes("src")
+add_linkdirs(get_config("workflow_lib"))
+add_links("workflow")
+includes("test", "benchmark", "tutorial")
 

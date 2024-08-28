@@ -195,7 +195,7 @@ public:
 protected:
 	virtual int prepare()
 	{
-		this->args.fd = open(this->pathname.c_str(), O_WRONLY | O_CREAT, 0644);
+		this->args.fd = open(this->pathname.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
 		if (this->args.fd < 0)
 			return -1;
 
@@ -267,7 +267,7 @@ public:
 protected:
 	virtual int prepare()
 	{
-		this->args.fd = open(this->pathname.c_str(), O_WRONLY | O_CREAT, 0644);
+		this->args.fd = open(this->pathname.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
 		if (this->args.fd < 0)
 			return -1;
 

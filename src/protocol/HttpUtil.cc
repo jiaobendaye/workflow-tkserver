@@ -93,6 +93,27 @@ bool HttpHeaderMap::get_strict(std::string key, std::vector<std::string>& values
 	return true;
 }
 
+
+void HttpUtil::decode_chunked_body_to_iovec(const HttpMessage *msg, struct iovec *vec, int& cnt)
+{
+	const void *chunk;
+	size_t chunk_size;
+	HttpChunkCursor cursor(msg);
+	int c =0;
+	while (c <= cnt && cursor.next(&chunk, &chunk_size))
+	{
+		vec->iov_base = (void*)chunk;
+		vec->iov_len=chunk_size;
+		vec++;
+		c++;
+	}
+	if(cursor.next(&chunk, &chunk_size))
+	{
+		//cnt is too small
+	}
+	cnt=c;
+}
+
 std::string HttpUtil::decode_chunked_body(const HttpMessage *msg)
 {
 	const void *body;

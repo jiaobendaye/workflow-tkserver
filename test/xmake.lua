@@ -1,7 +1,8 @@
 set_group("test")
 set_default(false)
 
-add_requires("gtest")
+add_requires("gtest 1.12.0", {alias = "gtest", configs= {main= true}})
+
 
 add_deps("workflow")
 
